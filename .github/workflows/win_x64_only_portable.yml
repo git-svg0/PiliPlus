@@ -1,0 +1,70 @@
+name: Build for Windows x64
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: "tag"
+        required: false
+        default: ""
+        type: string
+  workflow_dispatch:
+
+jobs:
+  build-windows-app:
+    name: Release Windows x64
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version-file: pubspec.yaml
+
+      - name: Apply Patch
+        shell: pwsh
+        run: lib/scripts/patch.ps1 windows
+        continue-on-error: true
+
+      - name: Add fastforge
+        run: |
+          dart pub global activate fastforge
+
+
+        shell: pwsh
+        run: lib/scripts/build.ps1
+
+      - name: Build Windows
+        run: |
+          fastforge package --platform windows --flutter-build-args="dart-define-from-file=pili_release.json"
+
+      - name: Prepare Upload
+        run: |
+          mkdir -p Release/PiliPlus-Win
+          mv build/windows/x64/runner/Release/* Release/PiliPlus-Win/
+
+      - name: Compress
+        run: |
+          Compress-Archive -Path "Release/PiliPlus-Win" -DestinationPath "PiliPlus_windows_${{env.version}}_x64_portable.zip"
+        shell: pwsh
+
+      - name: Release
+        if: ${{ github.event.inputs.tag != '' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag }}
+          name: ${{ github.event.inputs.tag }}
+          files: |
+            PiliPlus_windows_*.zip
+
+      - name: Upload windows file release
+        uses: actions/upload-artifact@v7
+        with:
+          archive: false
+          name: Windows-file-x64-release
+          path: PiliPlus_windows_*.zip
